@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="Cable_Car.vcxproj" Id="a5660f9f-78be-4ce1-b79c-f7ff526c3a1f" />
+</Solution>
