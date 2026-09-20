@@ -17,7 +17,7 @@
 // Features:
 // - One global/free camera
 // - Two stations
-// - One cable car automatically travels A <-> B
+// - One cable car travels one station-to-station trip when G is pressed
 // - Q/E rotate cable car around its OWN local Y-axis
 // - Station pulleys rotate while cable car moves
 // - Keyboard-controlled ship
@@ -103,7 +103,7 @@ int colorLoc = -1;
 // COLORS
 // ============================================================
 
-const glm::vec3 SKY_COLOR(0.56f, 0.79f, 0.95f);
+const glm::vec3 SKY_COLOR(0.035f, 0.035f, 0.045f);
 const glm::vec3 WATER_COLOR(0.08f, 0.52f, 0.72f);
 const glm::vec3 WATER_EDGE_COLOR(0.07f, 0.43f, 0.61f);
 
@@ -126,7 +126,7 @@ const glm::vec3 STATION_FLOOR(0.44f, 0.35f, 0.26f);
 const glm::vec3 STATION_ACCENT_A(0.74f, 0.16f, 0.13f);
 const glm::vec3 STATION_ACCENT_B(0.14f, 0.34f, 0.70f);
 
-const glm::vec3 CABLE_COLOR(0.07f, 0.08f, 0.09f);
+const glm::vec3 CABLE_COLOR(0.72f, 0.76f, 0.82f);
 const glm::vec3 PULLEY_COLOR(0.15f, 0.17f, 0.19f);
 const glm::vec3 PULLEY_SPOKE(0.69f, 0.71f, 0.72f);
 
@@ -135,6 +135,10 @@ const glm::vec3 CABIN_DARK_RED(0.55f, 0.05f, 0.07f);
 const glm::vec3 CABIN_WHITE(0.92f, 0.93f, 0.92f);
 const glm::vec3 CABIN_WINDOW(0.16f, 0.49f, 0.68f);
 const glm::vec3 CABIN_DARK(0.11f, 0.13f, 0.15f);
+
+// Light metallic color for the cable-car hanger and cable grip.
+// Visible on the dark background, but still mechanically neutral.
+const glm::vec3 CABIN_HANGER_COLOR(0.64f, 0.68f, 0.74f);
 
 const glm::vec3 SHIP_HULL(0.48f, 0.12f, 0.08f);
 const glm::vec3 SHIP_WHITE(0.91f, 0.92f, 0.89f);
@@ -147,7 +151,7 @@ const glm::vec3 SHIP_DARK(0.10f, 0.12f, 0.14f);
 // GLOBAL CAMERA
 // ============================================================
 
-glm::vec3 cameraPosition(0.0f, 9.0f, 25.0f);
+glm::vec3 cameraPosition(0.0f, 10.5f, 32.0f);
 
 float cameraYaw = -90.0f;
 float cameraPitch = -17.0f;
@@ -162,6 +166,12 @@ double lastMouseX = INITIAL_WIDTH / 2.0;
 double lastMouseY = INITIAL_HEIGHT / 2.0;
 
 
+
+
+// Camera mode:
+// false -> global/free camera
+// true  -> camera attached to the front of the cable car
+bool cableCarCameraActive = false;
 // ============================================================
 // WATER / LAND LAYOUT
 // ============================================================
@@ -169,8 +179,8 @@ double lastMouseY = INITIAL_HEIGHT / 2.0;
 // Water plane:
 // x = [-16, 16]
 // z = [-10, 10]
-const float WATER_HALF_X = 16.0f;
-const float WATER_HALF_Z = 10.0f;
+const float WATER_HALF_X = 22.0f;
+const float WATER_HALF_Z = 11.5f;
 
 // The ship has a conservative collision circle.
 // This prevents its visible geometry from clipping into land.
@@ -198,41 +208,41 @@ struct CircleObstacle
 // Islands are non-water areas.
 const RectObstacle LEFT_ISLAND =
 {
-    -14.5f, -5.5f,
-    -4.75f, 4.75f
+    -20.0f, -8.4f,
+    -5.3f,   5.3f
 };
 
 const RectObstacle RIGHT_ISLAND =
 {
-     5.5f, 14.5f,
-    -4.75f, 4.75f
+     8.4f, 20.0f,
+    -5.3f,  5.3f
 };
 
 // Stations extend slightly toward the water.
 // They are also collision obstacles for the ship.
 const RectObstacle STATION_A_OBSTACLE =
 {
-    -9.20f, -3.60f,
-    -2.25f,  2.25f
+    -12.3f, -6.2f,
+     -2.2f,  2.2f
 };
 
 const RectObstacle STATION_B_OBSTACLE =
 {
-     3.60f,  9.20f,
-    -2.25f,  2.25f
+     6.2f, 12.3f,
+    -2.2f,  2.2f
 };
 
 // Some mountains extend beyond the rectangular island edge.
 // Circular footprints stop the ship from clipping through those slopes.
 const std::vector<CircleObstacle> MOUNTAIN_OBSTACLES =
 {
-    { glm::vec2(-10.5f, -0.5f), 3.25f },
-    { glm::vec2(-12.2f, -3.4f), 2.35f },
-    { glm::vec2(-11.5f,  3.5f), 2.15f },
+    { glm::vec2(-14.2f, -0.7f), 4.15f },
+    { glm::vec2(-17.3f, -3.6f), 3.00f },
+    { glm::vec2(-16.4f,  3.8f), 2.70f },
 
-    { glm::vec2(10.5f,  0.0f), 3.35f },
-    { glm::vec2(12.0f, -3.5f), 2.40f },
-    { glm::vec2(11.5f,  3.5f), 2.15f }
+    { glm::vec2(14.2f, -0.5f), 4.15f },
+    { glm::vec2(17.3f, -3.6f), 3.00f },
+    { glm::vec2(16.4f,  3.8f), 2.70f }
 };
 
 
@@ -242,13 +252,13 @@ const std::vector<CircleObstacle> MOUNTAIN_OBSTACLES =
 
 // Station floor centers.
 // They intentionally sit near the inner edges of the two mountain areas.
-const glm::vec3 stationAPosition(-6.40f, 4.25f, 0.0f);
-const glm::vec3 stationBPosition(6.40f, 4.76f, 0.0f);
+const glm::vec3 stationAPosition(-9.20f, 4.55f, 0.0f);
+const glm::vec3 stationBPosition(9.20f, 5.05f, 0.0f);
 
 // Pulley centers / cable endpoints.
 // Keep both wheels in the original clear station-centered positions.
-const glm::vec3 cableStart(-6.40f, 6.45f, 0.0f);
-const glm::vec3 cableEnd(6.40f, 7.25f, 0.0f);
+const glm::vec3 cableStart(-9.20f, 6.85f, 0.0f);
+const glm::vec3 cableEnd(9.20f, 7.35f, 0.0f);
 
 // The cabin does NOT go all the way to either pulley center.
 // It docks slightly toward the INNER side of each station.
@@ -257,14 +267,14 @@ const glm::vec3 cableEnd(6.40f, 7.25f, 0.0f);
 // Physical cable:
 //   t ~= 0.145 -> Station A cabin docking point
 //   t ~= 0.855 -> Station B cabin docking point
-const float CABLE_DOCK_T_A = 0.145f;
-const float CABLE_DOCK_T_B = 0.855f;
+const float CABLE_DOCK_T_A = 0.10f;
+const float CABLE_DOCK_T_B = 0.90f;
 
 // Cabin center hangs below the cable.
-const float CABIN_DROP_FROM_CABLE = 1.54f;
+const float CABIN_DROP_FROM_CABLE = 1.35f;
 
 // 0 = docked at Station A, 1 = docked at Station B.
-float cableT = 0.0f;
+double cableT = 0.0;
 
 // +1 = next trip A -> B, -1 = next trip B -> A.
 float cableDirection = 1.0f;
@@ -282,7 +292,7 @@ float pulleyAngle = 0.0f;
 
 // Visible pulley radius in world units:
 // base cylinder radius 0.5 * scale 1.25 = 0.625.
-const float PULLEY_RADIUS_WORLD = 0.625f;
+const float PULLEY_RADIUS_WORLD = 0.59f;
 
 
 // ============================================================
@@ -306,6 +316,14 @@ float shipRotateSpeed = 70.0f;
 
 float deltaTime = 0.0f;
 float lastFrameTime = 0.0f;
+
+// Fixed-step animation removes visible speed jitter when frame time varies.
+const double FIXED_ANIMATION_STEP = 1.0 / 120.0;
+double animationAccumulator = 0.0;
+
+// Previous physics state is used for smooth render interpolation.
+double previousCableT = 0.0;
+float previousPulleyAngle = 0.0f;
 
 
 // ============================================================
@@ -420,6 +438,12 @@ void updateAnimations();
 glm::vec3 getCableCarPosition();
 glm::vec3 getCameraFront();
 
+glm::mat4 getCableCarParentMatrix();
+glm::mat4 getCableCarCameraView();
+
+double getRenderedCableT();
+float getRenderedPulleyAngle();
+
 bool circleIntersectsRectangle(
     const glm::vec2& center,
     float radius,
@@ -462,6 +486,12 @@ int main()
     glfwWindowHint(
         GLFW_OPENGL_PROFILE,
         GLFW_OPENGL_CORE_PROFILE
+    );
+
+    // Simple anti-aliasing helps reduce visible edge shimmer.
+    glfwWindowHint(
+        GLFW_SAMPLES,
+        4
     );
 
     // Open maximized so the complete scene is easy to view.
@@ -547,6 +577,8 @@ int main()
 
     // Correct front/behind object visibility.
     glEnable(GL_DEPTH_TEST);
+
+    glEnable(GL_MULTISAMPLE);
 
     // --------------------------------------------------------
     // Shader + primitive geometry
@@ -644,15 +676,27 @@ int main()
         // VIEW MATRIX
         // ----------------------------------------------------
 
-        glm::vec3 cameraFront =
-            getCameraFront();
+        glm::mat4 view(1.0f);
 
-        glm::mat4 view =
-            glm::lookAt(
-                cameraPosition,
-                cameraPosition + cameraFront,
-                glm::vec3(0.0f, 1.0f, 0.0f)
-            );
+        if (cableCarCameraActive)
+        {
+            // Camera is attached to the cable car.
+            // It translates and rotates with the cabin.
+            view =
+                getCableCarCameraView();
+        }
+        else
+        {
+            glm::vec3 cameraFront =
+                getCameraFront();
+
+            view =
+                glm::lookAt(
+                    cameraPosition,
+                    cameraPosition + cameraFront,
+                    glm::vec3(0.0f, 1.0f, 0.0f)
+                );
+        }
 
         // ----------------------------------------------------
         // PROJECTION MATRIX
@@ -726,41 +770,115 @@ void keyCallback(
 
     if (key == GLFW_KEY_ESCAPE)
     {
-        glfwSetWindowShouldClose(window, true);
+        glfwSetWindowShouldClose(
+            window,
+            true
+        );
     }
+
+    // G = start exactly one station-to-station trip.
     else if (key == GLFW_KEY_G)
     {
-        // G starts exactly one station-to-station trip.
-        // If the cabin is already moving, ignore the key.
         if (!cableMoving)
         {
+            // Start from an exact docked state.
+            previousCableT = cableT;
+            previousPulleyAngle = pulleyAngle;
+            animationAccumulator = 0.0;
+
             cableMoving = true;
 
             if (cableDirection > 0.0f)
-                std::cout << "Cable car departing Station A -> Station B\n";
+            {
+                std::cout
+                    << "Cable car departing Station A -> Station B\n";
+            }
             else
-                std::cout << "Cable car departing Station B -> Station A\n";
+            {
+                std::cout
+                    << "Cable car departing Station B -> Station A\n";
+            }
         }
     }
-    else if (key == GLFW_KEY_EQUAL || key == GLFW_KEY_KP_ADD)
+
+    // C = switch between global camera and cable-car front camera.
+    else if (key == GLFW_KEY_C)
     {
-        cableSpeed = std::min(cableSpeed + 0.02f, 0.35f);
-        std::cout << "Cable speed: " << cableSpeed << "\n";
+        cableCarCameraActive =
+            !cableCarCameraActive;
+
+        firstMouse = true;
+
+        std::cout
+            << "Camera: "
+            << (
+                cableCarCameraActive
+                ? "CABLE CAR FRONT"
+                : "GLOBAL"
+                )
+            << "\n";
     }
-    else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT)
+
+    else if (
+        key == GLFW_KEY_EQUAL ||
+        key == GLFW_KEY_KP_ADD
+        )
     {
-        cableSpeed = std::max(cableSpeed - 0.02f, 0.03f);
-        std::cout << "Cable speed: " << cableSpeed << "\n";
+        cableSpeed =
+            std::min(
+                cableSpeed + 0.02f,
+                0.35f
+            );
+
+        std::cout
+            << "Cable + pulley speed: "
+            << cableSpeed
+            << "\n";
     }
+
+    else if (
+        key == GLFW_KEY_MINUS ||
+        key == GLFW_KEY_KP_SUBTRACT
+        )
+    {
+        cableSpeed =
+            std::max(
+                cableSpeed - 0.02f,
+                0.03f
+            );
+
+        std::cout
+            << "Cable + pulley speed: "
+            << cableSpeed
+            << "\n";
+    }
+
     else if (key == GLFW_KEY_U)
     {
-        shipMoveSpeed = std::min(shipMoveSpeed + 0.4f, 7.0f);
-        std::cout << "Ship speed: " << shipMoveSpeed << "\n";
+        shipMoveSpeed =
+            std::min(
+                shipMoveSpeed + 0.4f,
+                7.0f
+            );
+
+        std::cout
+            << "Ship speed: "
+            << shipMoveSpeed
+            << "\n";
     }
+
     else if (key == GLFW_KEY_O)
     {
-        shipMoveSpeed = std::max(shipMoveSpeed - 0.4f, 0.8f);
-        std::cout << "Ship speed: " << shipMoveSpeed << "\n";
+        shipMoveSpeed =
+            std::max(
+                shipMoveSpeed - 0.4f,
+                0.8f
+            );
+
+        std::cout
+            << "Ship speed: "
+            << shipMoveSpeed
+            << "\n";
     }
 }
 
@@ -768,168 +886,93 @@ void processContinuousInput(
     GLFWwindow* window)
 {
     // --------------------------------------------------------
-    // GLOBAL CAMERA MOVEMENT
-    // W/S/A/D/R/F
+    // GLOBAL CAMERA MOVEMENT / ROTATION
+    //
+    // Disabled while cable-car camera is active.
+    // The cable-car camera itself does NOT rotate independently.
     // --------------------------------------------------------
 
-    glm::vec3 front =
-        getCameraFront();
+    if (!cableCarCameraActive)
+    {
+        glm::vec3 front =
+            getCameraFront();
 
-    glm::vec3 worldUp(
-        0.0f,
-        1.0f,
-        0.0f
-    );
-
-    glm::vec3 right =
-        glm::normalize(
-            glm::cross(
-                front,
-                worldUp
-            )
+        glm::vec3 worldUp(
+            0.0f,
+            1.0f,
+            0.0f
         );
 
-    float cameraStep =
-        cameraMoveSpeed *
-        deltaTime;
+        glm::vec3 right =
+            glm::normalize(
+                glm::cross(
+                    front,
+                    worldUp
+                )
+            );
 
-    if (
-        glfwGetKey(window, GLFW_KEY_W)
-        == GLFW_PRESS
-        )
-    {
-        cameraPosition +=
-            front *
-            cameraStep;
-    }
+        float cameraStep =
+            cameraMoveSpeed *
+            deltaTime;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_S)
-        == GLFW_PRESS
-        )
-    {
-        cameraPosition -=
-            front *
-            cameraStep;
-    }
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            cameraPosition += front * cameraStep;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_A)
-        == GLFW_PRESS
-        )
-    {
-        cameraPosition -=
-            right *
-            cameraStep;
-    }
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            cameraPosition -= front * cameraStep;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_D)
-        == GLFW_PRESS
-        )
-    {
-        cameraPosition +=
-            right *
-            cameraStep;
-    }
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            cameraPosition -= right * cameraStep;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_R)
-        == GLFW_PRESS
-        )
-    {
-        cameraPosition +=
-            worldUp *
-            cameraStep;
-    }
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            cameraPosition += right * cameraStep;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_F)
-        == GLFW_PRESS
-        )
-    {
-        cameraPosition -=
-            worldUp *
-            cameraStep;
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
+            cameraPosition += worldUp * cameraStep;
+
+        if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS)
+            cameraPosition -= worldUp * cameraStep;
+
+        float lookStep =
+            cameraLookSpeed *
+            deltaTime;
+
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+            cameraYaw -= lookStep;
+
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+            cameraYaw += lookStep;
+
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+            cameraPitch += lookStep;
+
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+            cameraPitch -= lookStep;
+
+        cameraPitch =
+            std::clamp(
+                cameraPitch,
+                -89.0f,
+                89.0f
+            );
     }
 
     // --------------------------------------------------------
-    // CAMERA ROTATION - Arrow keys
-    // --------------------------------------------------------
-
-    float lookStep =
-        cameraLookSpeed *
-        deltaTime;
-
-    if (
-        glfwGetKey(window, GLFW_KEY_LEFT)
-        == GLFW_PRESS
-        )
-    {
-        cameraYaw -=
-            lookStep;
-    }
-
-    if (
-        glfwGetKey(window, GLFW_KEY_RIGHT)
-        == GLFW_PRESS
-        )
-    {
-        cameraYaw +=
-            lookStep;
-    }
-
-    if (
-        glfwGetKey(window, GLFW_KEY_UP)
-        == GLFW_PRESS
-        )
-    {
-        cameraPitch +=
-            lookStep;
-    }
-
-    if (
-        glfwGetKey(window, GLFW_KEY_DOWN)
-        == GLFW_PRESS
-        )
-    {
-        cameraPitch -=
-            lookStep;
-    }
-
-    cameraPitch =
-        std::clamp(
-            cameraPitch,
-            -89.0f,
-            89.0f
-        );
-
-    // --------------------------------------------------------
-    // CABLE CAR LOCAL Y ROTATION
-    // Q / E
+    // CABLE-CAR LOCAL Y ROTATION
+    //
+    // Q/E rotates the cabin.
+    // If C-camera is active, the attached camera rotates too.
     // --------------------------------------------------------
 
     float cabinStep =
         cabinRotateSpeed *
         deltaTime;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_Q)
-        == GLFW_PRESS
-        )
-    {
-        cabinYaw +=
-            cabinStep;
-    }
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+        cabinYaw += cabinStep;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_E)
-        == GLFW_PRESS
-        )
-    {
-        cabinYaw -=
-            cabinStep;
-    }
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        cabinYaw -= cabinStep;
 
     if (cabinYaw > 360.0f)
         cabinYaw -= 360.0f;
@@ -939,30 +982,17 @@ void processContinuousInput(
 
     // --------------------------------------------------------
     // SHIP LOCAL ROTATION
-    // J / L
     // --------------------------------------------------------
 
     float shipTurnStep =
         shipRotateSpeed *
         deltaTime;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_J)
-        == GLFW_PRESS
-        )
-    {
-        shipYaw +=
-            shipTurnStep;
-    }
+    if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
+        shipYaw += shipTurnStep;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_L)
-        == GLFW_PRESS
-        )
-    {
-        shipYaw -=
-            shipTurnStep;
-    }
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+        shipYaw -= shipTurnStep;
 
     if (shipYaw > 360.0f)
         shipYaw -= 360.0f;
@@ -971,41 +1001,19 @@ void processContinuousInput(
         shipYaw += 360.0f;
 
     // --------------------------------------------------------
-    // SHIP FORWARD/BACKWARD
-    //
-    // We DO NOT directly change shipPosition.
-    // tryMoveShip() first checks:
-    // 1. water boundary
-    // 2. island collision
-    // 3. mountain collision
-    // 4. station collision
+    // SHIP FORWARD / BACKWARD
     // --------------------------------------------------------
 
     float shipStep =
         shipMoveSpeed *
         deltaTime;
 
-    if (
-        glfwGetKey(window, GLFW_KEY_I)
-        == GLFW_PRESS
-        )
-    {
-        tryMoveShip(
-            shipStep
-        );
-    }
+    if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS)
+        tryMoveShip(shipStep);
 
-    if (
-        glfwGetKey(window, GLFW_KEY_K)
-        == GLFW_PRESS
-        )
-    {
-        tryMoveShip(
-            -shipStep
-        );
-    }
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+        tryMoveShip(-shipStep);
 
-    // Ship remains at water height.
     shipPosition.y = 0.26f;
 }
 
@@ -1019,9 +1027,23 @@ void mouseCallback(
     double xpos,
     double ypos)
 {
-    // Cursor stays visible and usable.
-    // Camera mouse-look is active only while RIGHT mouse button is held.
-    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS)
+    // The cable-car camera is a fixed child of the cabin.
+    // It has no independent mouse rotation.
+    if (cableCarCameraActive)
+    {
+        firstMouse = true;
+        return;
+    }
+
+    // Keep the normal Windows cursor visible.
+    // Hold RIGHT mouse button only when you want camera look.
+    if (
+        glfwGetMouseButton(
+            window,
+            GLFW_MOUSE_BUTTON_RIGHT
+        )
+        != GLFW_PRESS
+        )
     {
         firstMouse = true;
         return;
@@ -1035,8 +1057,15 @@ void mouseCallback(
         return;
     }
 
-    float xOffset = static_cast<float>(xpos - lastMouseX);
-    float yOffset = static_cast<float>(lastMouseY - ypos);
+    float xOffset =
+        static_cast<float>(
+            xpos - lastMouseX
+            );
+
+    float yOffset =
+        static_cast<float>(
+            lastMouseY - ypos
+            );
 
     lastMouseX = xpos;
     lastMouseY = ypos;
@@ -1047,7 +1076,12 @@ void mouseCallback(
     cameraYaw += xOffset;
     cameraPitch += yOffset;
 
-    cameraPitch = std::clamp(cameraPitch, -89.0f, 89.0f);
+    cameraPitch =
+        std::clamp(
+            cameraPitch,
+            -89.0f,
+            89.0f
+        );
 }
 
 void framebufferSizeCallback(
@@ -1119,7 +1153,8 @@ void printControls()
     std::cout << "  G           : Start one station-to-station trip\n";
     std::cout << "                A -> B, stop; next G -> B -> A, stop\n";
     std::cout << "  Q / E       : Rotate cabin around LOCAL Y-axis\n";
-    std::cout << "  + / -       : Increase / decrease cable speed\n\n";
+    std::cout << "  + / -       : Increase / decrease cable + pulley speed\n";
+    std::cout << "  C           : Global camera <-> cable-car front camera\n\n";
 
     std::cout << "SHIP\n";
     std::cout << "  I / K       : Forward / backward\n";
@@ -1132,9 +1167,13 @@ void printControls()
     std::cout << "  A / D       : Left / right\n";
     std::cout << "  R / F       : Up / down\n";
     std::cout << "  Arrow Keys  : Look around\n";
-    std::cout << "  Right Mouse : Hold + move mouse to look around\n";
-    std::cout << "  Cursor      : Visible and usable\n\n";
+    std::cout << "  Right Mouse : Hold + move to look around\n\n";
 
+    std::cout << "CABLE-CAR CAMERA\n";
+    std::cout << "  No independent rotation\n";
+    std::cout << "  Q / E rotates the cabin and attached camera together\n\n";
+
+    std::cout << "  Cursor      : Visible and usable\n";
     std::cout << "  ESC         : Exit\n";
     std::cout << "=============================================\n\n";
 }
@@ -1145,152 +1184,318 @@ void printControls()
 
 void updateAnimations()
 {
-    // If cabin is docked/stopped, both pulley wheels stop too.
-    if (!cableMoving)
-        return;
+    // Accumulate real frame time, but simulate movement using
+    // a constant 120 Hz step. This makes cable motion stable even
+    // when individual rendered frames take slightly different times.
+    animationAccumulator +=
+        static_cast<double>(
+            std::min(
+                deltaTime,
+                0.05f
+            )
+            );
 
-    const float movementDirection =
-        cableDirection;
-
-    const float previousT =
-        cableT;
-
-
-    // --------------------------------------------------------
-    // 1. MOVE CABLE CAR
-    //
-    // cableSpeed controls how fast t changes.
-    // --------------------------------------------------------
-
-    cableT +=
-        cableDirection *
-        cableSpeed *
-        deltaTime;
-
-
-    // --------------------------------------------------------
-    // 2. STOP AT STATION B
-    // --------------------------------------------------------
-
-    if (cableT >= 1.0f)
-    {
-        cableT = 1.0f;
-
-        cableMoving = false;
-
-        // Next G press returns B -> A.
-        cableDirection = -1.0f;
-
-        std::cout
-            << "Cable car arrived at Station B and stopped. "
-            << "Press G to return to Station A.\n";
-    }
-
-
-    // --------------------------------------------------------
-    // 3. STOP AT STATION A
-    // --------------------------------------------------------
-
-    else if (cableT <= 0.0f)
-    {
-        cableT = 0.0f;
-
-        cableMoving = false;
-
-        // Next G press travels A -> B.
-        cableDirection = 1.0f;
-
-        std::cout
-            << "Cable car arrived at Station A and stopped. "
-            << "Press G to travel to Station B.\n";
-    }
-
-
-    // --------------------------------------------------------
-    // 4. PULLEY ROTATION LINKED TO CABLE-CAR SPEED
-    //
-    // This is no longer an independent fixed wheel speed.
-    //
-    // Cabin path length in world units:
-    //   |cableEnd - cableStart| * docking fraction
-    //
-    // Cable-car world speed:
-    //   pathLength * cableSpeed
-    //
-    // Wheel angular speed:
-    //   omega = linearSpeed / wheelRadius
-    //
-    // Therefore if + increases cableSpeed by a certain ratio,
-    // pulley speed increases by the SAME ratio.
-    // If - decreases cableSpeed, wheel speed decreases too.
-    // --------------------------------------------------------
-
-    if (
-        std::abs(cableT - previousT)
-    >
-        0.000001f
+    while (
+        animationAccumulator >=
+        FIXED_ANIMATION_STEP
         )
     {
-        const float fullCableLength =
-            glm::length(
-                cableEnd -
-                cableStart
-            );
+        previousCableT =
+            cableT;
 
-        const float cabinPathFraction =
-            CABLE_DOCK_T_B -
-            CABLE_DOCK_T_A;
+        previousPulleyAngle =
+            pulleyAngle;
 
-        const float cabinPathLength =
-            fullCableLength *
-            cabinPathFraction;
+        if (cableMoving)
+        {
+            const float movementDirection =
+                cableDirection;
 
-        const float cableLinearSpeed =
-            cabinPathLength *
-            cableSpeed;
+            // ------------------------------------------------
+            // CABLE-CAR MOVEMENT
+            // ------------------------------------------------
+            cableT +=
+                static_cast<double>(cableDirection)
+                *
+                static_cast<double>(cableSpeed)
+                *
+                FIXED_ANIMATION_STEP;
 
-        // radians / second
-        const float pulleyAngularSpeedRadians =
-            cableLinearSpeed /
-            PULLEY_RADIUS_WORLD;
+            // Station B
+            if (cableT >= 1.0)
+            {
+                cableT = 1.0;
+                cableMoving = false;
+                cableDirection = -1.0f;
 
-        // degrees / second
-        const float pulleyAngularSpeedDegrees =
-            glm::degrees(
-                pulleyAngularSpeedRadians
-            );
+                std::cout
+                    << "Cable car arrived at Station B and stopped. "
+                    << "Press G to return to Station A.\n";
+            }
 
-        pulleyAngle +=
-            movementDirection *
-            pulleyAngularSpeedDegrees *
-            deltaTime;
+            // Station A
+            else if (cableT <= 0.0)
+            {
+                cableT = 0.0;
+                cableMoving = false;
+                cableDirection = 1.0f;
 
-        if (pulleyAngle > 360.0f)
-            pulleyAngle -= 360.0f;
+                std::cout
+                    << "Cable car arrived at Station A and stopped. "
+                    << "Press G to travel to Station B.\n";
+            }
 
-        if (pulleyAngle < -360.0f)
-            pulleyAngle += 360.0f;
+            // ------------------------------------------------
+            // PULLEY ROTATION
+            // Same physical relation as before:
+            // angular speed = linear speed / radius
+            // ------------------------------------------------
+            if (
+                std::abs(
+                    cableT -
+                    previousCableT
+                )
+    >
+                0.0000001
+                )
+            {
+                const float fullCableLength =
+                    glm::length(
+                        cableEnd -
+                        cableStart
+                    );
+
+                const float cabinPathFraction =
+                    CABLE_DOCK_T_B -
+                    CABLE_DOCK_T_A;
+
+                const float cabinPathLength =
+                    fullCableLength *
+                    cabinPathFraction;
+
+                const float cableLinearSpeed =
+                    cabinPathLength *
+                    cableSpeed;
+
+                const float pulleyAngularSpeedRadians =
+                    cableLinearSpeed /
+                    PULLEY_RADIUS_WORLD;
+
+                const float pulleyAngularSpeedDegrees =
+                    glm::degrees(
+                        pulleyAngularSpeedRadians
+                    );
+
+                pulleyAngle +=
+                    movementDirection
+                    *
+                    pulleyAngularSpeedDegrees
+                    *
+                    static_cast<float>(
+                        FIXED_ANIMATION_STEP
+                        );
+            }
+        }
+        else
+        {
+            // No interpolation drift while docked.
+            previousCableT =
+                cableT;
+
+            previousPulleyAngle =
+                pulleyAngle;
+        }
+
+        animationAccumulator -=
+            FIXED_ANIMATION_STEP;
     }
 }
+
+double getRenderedCableT()
+{
+    if (!cableMoving)
+        return cableT;
+
+    const double alpha =
+        std::clamp(
+            animationAccumulator /
+            FIXED_ANIMATION_STEP,
+            0.0,
+            1.0
+        );
+
+    return
+        previousCableT
+        +
+        (
+            cableT -
+            previousCableT
+            )
+        *
+        alpha;
+}
+
+
+float getRenderedPulleyAngle()
+{
+    if (!cableMoving)
+        return pulleyAngle;
+
+    const float alpha =
+        static_cast<float>(
+            std::clamp(
+                animationAccumulator /
+                FIXED_ANIMATION_STEP,
+                0.0,
+                1.0
+            )
+            );
+
+    return
+        previousPulleyAngle
+        +
+        (
+            pulleyAngle -
+            previousPulleyAngle
+            )
+        *
+        alpha;
+}
+
 
 glm::vec3 getCableCarPosition()
 {
-    // The physical cable runs pulley-to-pulley.
-    // The cabin uses only the inner docking section of that cable,
-    // so the two original large pulley wheels remain visible and
-    // the cabin stops before reaching either wheel.
-    float lineT =
-        CABLE_DOCK_T_A +
-        cableT * (CABLE_DOCK_T_B - CABLE_DOCK_T_A);
+    // Smooth render position between fixed physics states.
+    const double renderCableT =
+        getRenderedCableT();
 
-    // Explicit linear interpolation:
-    // P = A + t(B - A)
-    glm::vec3 cablePoint =
-        cableStart +
-        lineT * (cableEnd - cableStart);
+    const double lineTDouble =
+        static_cast<double>(
+            CABLE_DOCK_T_A
+            )
+        +
+        renderCableT
+        *
+        static_cast<double>(
+            CABLE_DOCK_T_B -
+            CABLE_DOCK_T_A
+            );
 
-    return cablePoint + glm::vec3(0.0f, -CABIN_DROP_FROM_CABLE, 0.0f);
+    const float lineT =
+        static_cast<float>(
+            lineTDouble
+            );
+
+    const glm::vec3 cablePoint =
+        cableStart
+        +
+        lineT
+        *
+        (cableEnd - cableStart);
+
+    return
+        cablePoint
+        +
+        glm::vec3(
+            0.0f,
+            -CABIN_DROP_FROM_CABLE,
+            0.0f
+        );
 }
+
+glm::mat4 getCableCarParentMatrix()
+{
+    // Exactly the same parent transform concept as the cabin:
+    // TranslationAlongCable * LocalYRotation
+
+    glm::mat4 cabinParent(1.0f);
+
+    cabinParent =
+        glm::translate(
+            cabinParent,
+            getCableCarPosition()
+        );
+
+    cabinParent =
+        glm::rotate(
+            cabinParent,
+            glm::radians(cabinYaw),
+            glm::vec3(
+                0.0f,
+                1.0f,
+                0.0f
+            )
+        );
+
+    return cabinParent;
+}
+
+
+glm::mat4 getCableCarCameraView()
+{
+    // ========================================================
+    // FRONT CAMERA
+    //
+    // Cabin local +X is treated as the front/travel-facing side.
+    //
+    // Camera is placed just outside the front wall so the solid
+    // window geometry cannot block the view.
+    //
+    // No independent yaw/pitch is used here.
+    // Q/E rotates the cabin parent, therefore this camera rotates
+    // naturally with the cable car.
+    // ========================================================
+
+    const glm::mat4 cabinParent =
+        getCableCarParentMatrix();
+
+    const glm::vec3 localCameraPosition(
+        1.03f,
+        0.18f,
+        0.20f
+    );
+
+    const glm::vec3 localForward(
+        1.0f,
+        0.0f,
+        0.0f
+    );
+
+    const glm::vec3 localUp(
+        0.0f,
+        1.0f,
+        0.0f
+    );
+
+    const glm::vec3 worldCameraPosition =
+        glm::vec3(
+            cabinParent *
+            glm::vec4(
+                localCameraPosition,
+                1.0f
+            )
+        );
+
+    const glm::vec3 worldForward =
+        glm::normalize(
+            glm::mat3(cabinParent) *
+            localForward
+        );
+
+    const glm::vec3 worldUp =
+        glm::normalize(
+            glm::mat3(cabinParent) *
+            localUp
+        );
+
+    return
+        glm::lookAt(
+            worldCameraPosition,
+            worldCameraPosition + worldForward,
+            worldUp
+        );
+}
+
 
 // ============================================================
 // SHIP COLLISION
@@ -2102,14 +2307,19 @@ void drawWater()
 
 void drawIslands()
 {
-    // Brown soil layer.
+    // ========================================================
+    // TWO SIMPLE ISLAND PLATFORMS
+    // Brown soil cuboid + thin green grass cuboid.
+    // ========================================================
+
+    // LEFT SOIL
     glm::mat4 leftSoil(1.0f);
 
     leftSoil =
         glm::translate(
             leftSoil,
             glm::vec3(
-                -10.0f,
+                -14.2f,
                 0.18f,
                 0.0f
             )
@@ -2119,9 +2329,9 @@ void drawIslands()
         glm::scale(
             leftSoil,
             glm::vec3(
-                9.0f,
+                11.6f,
                 0.36f,
-                9.5f
+                10.6f
             )
         );
 
@@ -2130,13 +2340,14 @@ void drawIslands()
         ISLAND_EDGE
     );
 
+    // RIGHT SOIL
     glm::mat4 rightSoil(1.0f);
 
     rightSoil =
         glm::translate(
             rightSoil,
             glm::vec3(
-                10.0f,
+                14.2f,
                 0.18f,
                 0.0f
             )
@@ -2146,9 +2357,9 @@ void drawIslands()
         glm::scale(
             rightSoil,
             glm::vec3(
-                9.0f,
+                11.6f,
                 0.36f,
-                9.5f
+                10.6f
             )
         );
 
@@ -2157,14 +2368,14 @@ void drawIslands()
         ISLAND_EDGE
     );
 
-    // Green top layer.
+    // LEFT GRASS
     glm::mat4 leftGrass(1.0f);
 
     leftGrass =
         glm::translate(
             leftGrass,
             glm::vec3(
-                -10.0f,
+                -14.2f,
                 0.39f,
                 0.0f
             )
@@ -2174,9 +2385,9 @@ void drawIslands()
         glm::scale(
             leftGrass,
             glm::vec3(
-                8.85f,
+                11.4f,
                 0.10f,
-                9.35f
+                10.4f
             )
         );
 
@@ -2185,13 +2396,14 @@ void drawIslands()
         ISLAND_COLOR
     );
 
+    // RIGHT GRASS
     glm::mat4 rightGrass(1.0f);
 
     rightGrass =
         glm::translate(
             rightGrass,
             glm::vec3(
-                10.0f,
+                14.2f,
                 0.39f,
                 0.0f
             )
@@ -2201,9 +2413,9 @@ void drawIslands()
         glm::scale(
             rightGrass,
             glm::vec3(
-                8.85f,
+                11.4f,
                 0.10f,
-                9.35f
+                10.4f
             )
         );
 
@@ -2451,49 +2663,37 @@ void drawTree(
 void drawTrees()
 {
     // ========================================================
-    // TREE PLACEMENT
+    // REUSABLE TREE PLACEMENT
     //
-    // All trees call the SAME drawTree() function.
-    // We only change:
-    // - position   -> Translation
-    // - yaw        -> Rotation around Y
-    // - size       -> Scaling
+    // Every tree uses the SAME drawTree() model:
+    //   1 cylinder trunk + 2 cone leaf sections.
     //
-    // Trees are kept away from the cable-car path and station
-    // entrances so the final scene remains clean.
+    // Only Translation, Y Rotation and Scaling change.
     // ========================================================
 
-
-    // --------------------------------------------------------
-    // Main mountain definitions.
-    // These are used only to calculate an approximate Y height
-    // so each tree sits on the mountain slope instead of floating.
-    // --------------------------------------------------------
-
     const glm::vec3 leftBase(
-        -10.5f,
+        -14.2f,
+        0.44f,
+        -0.7f
+    );
+
+    const glm::vec3 leftScale(
+        8.2f,
+        9.6f,
+        7.8f
+    );
+
+    const glm::vec3 rightBase(
+        14.2f,
         0.44f,
         -0.5f
     );
 
-    const glm::vec3 leftScale(
-        6.3f,
-        7.2f,
-        6.2f
-    );
-
-    const glm::vec3 rightBase(
-        10.5f,
-        0.44f,
-        0.0f
-    );
-
     const glm::vec3 rightScale(
-        6.5f,
-        8.0f,
-        6.4f
+        8.2f,
+        9.7f,
+        7.8f
     );
-
 
     struct TreePlacement
     {
@@ -2504,41 +2704,24 @@ void drawTrees()
         bool leftMountain;
     };
 
-
-    // --------------------------------------------------------
-    // TREES ON MOUNTAIN SLOPES
-    //
-    // 7 trees on the left main mountain
-    // 7 trees on the right main mountain
-    //
-    // Different sizes and Y rotations make the repeated
-    // geometric tree model look less repetitive.
-    // --------------------------------------------------------
-
     const TreePlacement mountainTrees[] =
     {
-        // LEFT MOUNTAIN
-        {-12.50f,  0.90f, 0.70f,  18.0f, true },
-        {-11.80f, -2.40f, 0.62f, -22.0f, true },
-        { -9.20f,  1.15f, 0.68f,  30.0f, true },
-        { -8.80f, -1.65f, 0.58f, -15.0f, true },
+        // LEFT MAIN MOUNTAIN
+        {-16.30f,  0.90f, 0.72f,  16.0f, true },
+        {-15.60f, -2.60f, 0.64f, -24.0f, true },
+        {-13.70f,  1.25f, 0.68f,  32.0f, true },
+        {-12.55f, -1.65f, 0.58f, -18.0f, true },
+        {-15.30f,  2.25f, 0.57f,  40.0f, true },
+        {-13.10f, -2.35f, 0.60f, -34.0f, true },
 
-        {-11.65f,  1.95f, 0.57f,  42.0f, true },
-        {-10.10f, -2.15f, 0.60f, -35.0f, true },
-        { -9.75f,  2.05f, 0.55f,  12.0f, true },
-
-
-        // RIGHT MOUNTAIN
-        { 12.45f,  0.95f, 0.72f, -18.0f, false },
-        { 11.85f, -2.35f, 0.63f,  24.0f, false },
-        {  9.20f,  1.25f, 0.69f, -30.0f, false },
-        {  8.80f, -1.70f, 0.58f,  15.0f, false },
-
-        { 11.60f,  2.00f, 0.58f, -42.0f, false },
-        { 10.10f, -2.20f, 0.61f,  34.0f, false },
-        {  9.80f,  2.10f, 0.56f, -10.0f, false }
+        // RIGHT MAIN MOUNTAIN
+        { 16.30f,  0.95f, 0.72f, -16.0f, false },
+        { 15.60f, -2.60f, 0.64f,  24.0f, false },
+        { 13.70f,  1.25f, 0.68f, -32.0f, false },
+        { 12.55f, -1.65f, 0.58f,  18.0f, false },
+        { 15.30f,  2.25f, 0.57f, -40.0f, false },
+        { 13.10f, -2.35f, 0.60f,  34.0f, false }
     };
-
 
     for (
         const TreePlacement& tree :
@@ -2555,7 +2738,6 @@ void drawTrees()
             ? leftScale
             : rightScale;
 
-        // Approximate mountain surface height at this X/Z point.
         float y =
             mountainSurfaceY(
                 base,
@@ -2575,120 +2757,20 @@ void drawTrees()
         );
     }
 
-
     // --------------------------------------------------------
-    // LOWER TREES ON LEFT ISLAND
-    //
-    // Kept near the outer shore and away from Station A.
+    // LOWER ISLAND TREES
+    // Kept away from station entrances and cable path.
     // --------------------------------------------------------
 
-    drawTree(
-        glm::vec3(
-            -13.60f,
-            0.49f,
-            3.65f
-        ),
-        0.72f,
-        12.0f
-    );
+    drawTree(glm::vec3(-18.6f, 0.49f, 4.20f), 0.70f, 15.0f);
+    drawTree(glm::vec3(-18.7f, 0.49f, -4.10f), 0.64f, -18.0f);
+    drawTree(glm::vec3(-15.8f, 0.49f, 4.45f), 0.58f, 30.0f);
+    drawTree(glm::vec3(-12.1f, 0.49f, 4.25f), 0.54f, -26.0f);
 
-    drawTree(
-        glm::vec3(
-            -13.80f,
-            0.49f,
-            -3.70f
-        ),
-        0.66f,
-        -20.0f
-    );
-
-    drawTree(
-        glm::vec3(
-            -11.65f,
-            0.49f,
-            4.05f
-        ),
-        0.58f,
-        32.0f
-    );
-
-    drawTree(
-        glm::vec3(
-            -10.20f,
-            0.49f,
-            -4.05f
-        ),
-        0.61f,
-        -38.0f
-    );
-
-    drawTree(
-        glm::vec3(
-            -8.35f,
-            0.49f,
-            4.00f
-        ),
-        0.54f,
-        20.0f
-    );
-
-
-    // --------------------------------------------------------
-    // LOWER TREES ON RIGHT ISLAND
-    //
-    // Mirrored loosely rather than perfectly, so the scene
-    // looks natural without becoming crowded.
-    // --------------------------------------------------------
-
-    drawTree(
-        glm::vec3(
-            13.60f,
-            0.49f,
-            3.65f
-        ),
-        0.72f,
-        -12.0f
-    );
-
-    drawTree(
-        glm::vec3(
-            13.80f,
-            0.49f,
-            -3.70f
-        ),
-        0.66f,
-        20.0f
-    );
-
-    drawTree(
-        glm::vec3(
-            11.60f,
-            0.49f,
-            4.05f
-        ),
-        0.59f,
-        -32.0f
-    );
-
-    drawTree(
-        glm::vec3(
-            10.15f,
-            0.49f,
-            -4.05f
-        ),
-        0.61f,
-        38.0f
-    );
-
-    drawTree(
-        glm::vec3(
-            8.35f,
-            0.49f,
-            4.00f
-        ),
-        0.54f,
-        -20.0f
-    );
+    drawTree(glm::vec3(18.6f, 0.49f, 4.20f), 0.70f, -15.0f);
+    drawTree(glm::vec3(18.7f, 0.49f, -4.10f), 0.64f, 18.0f);
+    drawTree(glm::vec3(15.8f, 0.49f, 4.45f), 0.58f, -30.0f);
+    drawTree(glm::vec3(12.1f, 0.49f, 4.25f), 0.54f, 26.0f);
 }
 
 // ============================================================
@@ -2704,26 +2786,38 @@ void drawStation(
         ? STATION_ACCENT_A
         : STATION_ACCENT_B;
 
+    // ========================================================
+    // SIMPLE STATION
+    //
+    // Basic geometric parts only:
+    // - 4 lower support columns
+    // - 1 platform
+    // - 4 upper roof columns
+    // - 2 side safety rails
+    // - 1 flat roof
+    // - 1 small station sign
+    //
+    // The X direction stays OPEN so the cabin can enter/exit.
+    // ========================================================
+
+    const float groundY = 0.48f;
+
     // --------------------------------------------------------
-    // SUPPORT STRUCTURE
+    // LOWER SUPPORT COLUMNS
     // --------------------------------------------------------
 
-    float groundY =
-        0.48f;
-
-    float supportHeight =
+    const float supportHeight =
         std::max(
-            position.y -
-            groundY,
+            position.y - groundY,
             0.5f
         );
 
-    float supportCenterY =
+    const float supportCenterY =
         groundY +
         supportHeight * 0.5f;
 
-    const float postX = 2.25f;
-    const float postZ = 1.55f;
+    const float postX = 2.35f;
+    const float postZ = 1.42f;
 
     const glm::vec3 offsets[] =
     {
@@ -2767,7 +2861,7 @@ void drawStation(
     }
 
     // --------------------------------------------------------
-    // PLATFORM
+    // MAIN PLATFORM
     // --------------------------------------------------------
 
     glm::mat4 floor(1.0f);
@@ -2775,11 +2869,10 @@ void drawStation(
     floor =
         glm::translate(
             floor,
-            position
-            +
+            position +
             glm::vec3(
                 0.0f,
-                -0.16f,
+                -0.15f,
                 0.0f
             )
         );
@@ -2788,9 +2881,9 @@ void drawStation(
         glm::scale(
             floor,
             glm::vec3(
-                5.30f,
-                0.32f,
-                4.00f
+                5.80f,
+                0.30f,
+                3.65f
             )
         );
 
@@ -2799,52 +2892,15 @@ void drawStation(
         STATION_FLOOR
     );
 
-    // Slight raised center guide floor.
-    // Cabin passes above it without clipping.
-    glm::mat4 centerFloor(1.0f);
-
-    centerFloor =
-        glm::translate(
-            centerFloor,
-            position
-            +
-            glm::vec3(
-                0.0f,
-                0.05f,
-                0.0f
-            )
-        );
-
-    centerFloor =
-        glm::scale(
-            centerFloor,
-            glm::vec3(
-                2.90f,
-                0.10f,
-                1.55f
-            )
-        );
-
-    drawCube(
-        centerFloor,
-        STATION_WALL_2
-    );
-
     // --------------------------------------------------------
-    // UPPER PILLARS
-    //
-    // IMPORTANT:
-    // Station is OPEN on both X sides.
-    // Cable direction is along X, therefore cabin clearly
-    // enters/exits instead of passing through a wall.
+    // UPPER ROOF COLUMNS
+    // Roof underside is position.y + 2.94.
     // --------------------------------------------------------
 
+    const float upperHeight = 2.78f;
     const float upperCenterY =
         position.y +
-        1.60f;
-
-    const float upperHeight =
-        3.18f;
+        upperHeight * 0.5f;
 
     for (
         const glm::vec3& offset :
@@ -2867,9 +2923,9 @@ void drawStation(
             glm::scale(
                 pillar,
                 glm::vec3(
-                    0.24f,
+                    0.22f,
                     upperHeight,
-                    0.24f
+                    0.22f
                 )
             );
 
@@ -2880,22 +2936,21 @@ void drawStation(
     }
 
     // --------------------------------------------------------
-    // SIDE RAILS - placed along Z edges
-    // Do NOT block X-axis cabin route.
+    // SIMPLE SIDE SAFETY RAILS
+    // They are on Z edges, so X path remains open.
     // --------------------------------------------------------
 
     for (
         float sideZ :
-    { -1.84f, 1.84f }
+    { -1.62f, 1.62f }
         )
     {
-        glm::mat4 lowerRail(1.0f);
+        glm::mat4 rail(1.0f);
 
-        lowerRail =
+        rail =
             glm::translate(
-                lowerRail,
-                position
-                +
+                rail,
+                position +
                 glm::vec3(
                     0.0f,
                     0.48f,
@@ -2903,54 +2958,27 @@ void drawStation(
                 )
             );
 
-        lowerRail =
+        rail =
             glm::scale(
-                lowerRail,
+                rail,
                 glm::vec3(
-                    4.45f,
-                    0.58f,
-                    0.12f
+                    4.70f,
+                    0.36f,
+                    0.10f
                 )
             );
 
         drawCube(
-            lowerRail,
+            rail,
             STATION_WALL_2
-        );
-
-        glm::mat4 upperBeam(1.0f);
-
-        upperBeam =
-            glm::translate(
-                upperBeam,
-                position
-                +
-                glm::vec3(
-                    0.0f,
-                    2.25f,
-                    sideZ
-                )
-            );
-
-        upperBeam =
-            glm::scale(
-                upperBeam,
-                glm::vec3(
-                    4.75f,
-                    0.18f,
-                    0.18f
-                )
-            );
-
-        drawCube(
-            upperBeam,
-            STATION_DARK
         );
     }
 
     // --------------------------------------------------------
-    // ROOF
-    // High enough so pulley/cable do not clip into it.
+    // FLAT ROOF
+    // Center = position.y + 3.07
+    // Thickness = 0.26
+    // Under-side = position.y + 2.94
     // --------------------------------------------------------
 
     glm::mat4 roof(1.0f);
@@ -2958,11 +2986,10 @@ void drawStation(
     roof =
         glm::translate(
             roof,
-            position
-            +
+            position +
             glm::vec3(
                 0.0f,
-                3.28f,
+                3.07f,
                 0.0f
             )
         );
@@ -2971,9 +2998,9 @@ void drawStation(
         glm::scale(
             roof,
             glm::vec3(
-                5.45f,
-                0.24f,
-                4.15f
+                5.65f,
+                0.26f,
+                3.80f
             )
         );
 
@@ -2982,98 +3009,36 @@ void drawStation(
         STATION_DARK
     );
 
-    // Roof accent strip.
-    glm::mat4 accentStrip(1.0f);
+    // --------------------------------------------------------
+    // SMALL COLOR SIGN
+    // --------------------------------------------------------
 
-    accentStrip =
+    glm::mat4 sign(1.0f);
+
+    sign =
         glm::translate(
-            accentStrip,
-            position
-            +
+            sign,
+            position +
             glm::vec3(
                 0.0f,
-                2.90f,
-                -2.02f
+                2.72f,
+                -1.83f
             )
         );
 
-    accentStrip =
+    sign =
         glm::scale(
-            accentStrip,
+            sign,
             glm::vec3(
-                4.65f,
-                0.18f,
-                0.10f
+                1.25f,
+                0.22f,
+                0.08f
             )
         );
 
     drawCube(
-        accentStrip,
+        sign,
         accent
-    );
-
-    // --------------------------------------------------------
-    // SMALL SIDE CONTROL ROOM
-    //
-    // Kept away from center cable corridor.
-    // --------------------------------------------------------
-
-    glm::mat4 controlRoom(1.0f);
-
-    controlRoom =
-        glm::translate(
-            controlRoom,
-            position
-            +
-            glm::vec3(
-                0.0f,
-                0.88f,
-                1.42f
-            )
-        );
-
-    controlRoom =
-        glm::scale(
-            controlRoom,
-            glm::vec3(
-                1.40f,
-                1.35f,
-                0.62f
-            )
-        );
-
-    drawCube(
-        controlRoom,
-        STATION_WALL
-    );
-
-    glm::mat4 controlWindow(1.0f);
-
-    controlWindow =
-        glm::translate(
-            controlWindow,
-            position
-            +
-            glm::vec3(
-                0.0f,
-                0.98f,
-                1.745f
-            )
-        );
-
-    controlWindow =
-        glm::scale(
-            controlWindow,
-            glm::vec3(
-                0.80f,
-                0.45f,
-                0.03f
-            )
-        );
-
-    drawCube(
-        controlWindow,
-        CABIN_WINDOW
     );
 }
 
@@ -3149,29 +3114,20 @@ void drawPulley(
     float angleDegrees)
 {
     // ========================================================
-    // CEILING-MOUNTED PULLEY ASSEMBLY
+    // CLEAN CEILING-MOUNTED PULLEY
     //
-    // Everything is made from simple geometric primitives:
-    // - ceiling mounting plate  -> cube
-    // - two hanging brackets    -> cubes
-    // - axle                    -> cylinder
-    // - pulley wheel            -> cylinder
-    // - cross spokes            -> cubes
+    // Fixed:
+    // ceiling plate + two hangers + two dark bearing blocks + axle
     //
-    // IMPORTANT:
-    // The mounting structure is FIXED.
-    // Only wheel + spokes rotate.
+    // Rotating:
+    // dark wheel + two light spokes
+    //
+    // Bearing blocks are deliberately placed OUTSIDE the wheel
+    // radius so they do not produce overlapping/z-fighting stripes
+    // from the cable-car front camera.
     // ========================================================
 
-
-    // --------------------------------------------------------
-    // 1. CEILING MOUNTING PLATE
-    //
-    // The station roof underside is about 0.76 world-units
-    // above the wheel center. This plate overlaps the underside
-    // slightly, so it looks tightly bolted to the ceiling.
-    // --------------------------------------------------------
-
+    // Ceiling plate
     glm::mat4 ceilingPlate(1.0f);
 
     ceilingPlate =
@@ -3180,7 +3136,7 @@ void drawPulley(
             position +
             glm::vec3(
                 0.0f,
-                0.79f,
+                0.72f,
                 0.0f
             )
         );
@@ -3189,28 +3145,19 @@ void drawPulley(
         glm::scale(
             ceilingPlate,
             glm::vec3(
-                2.10f,
-                0.18f,
-                0.42f
+                1.95f,
+                0.16f,
+                0.40f
             )
         );
 
     drawCube(
         ceilingPlate,
-        STATION_DARK
+        STATION_WALL_2
     );
 
-
-    // --------------------------------------------------------
-    // 2. TWO VERTICAL HANGERS
-    //
-    // They connect directly from the ceiling plate down to the
-    // wheel axle, making the mechanical attachment obvious.
-    // Kept slightly behind the wheel in Z so the wheel/spokes
-    // stay easy to see from the front.
-    // --------------------------------------------------------
-
-    const float hangerX = 0.68f;
+    // Hangers are outside the visible wheel radius.
+    const float hangerX = 0.78f;
 
     for (
         float x :
@@ -3225,8 +3172,8 @@ void drawPulley(
                 position +
                 glm::vec3(
                     x,
-                    0.38f,
-                    -0.20f
+                    0.37f,
+                    -0.18f
                 )
             );
 
@@ -3234,9 +3181,9 @@ void drawPulley(
             glm::scale(
                 hanger,
                 glm::vec3(
-                    0.16f,
-                    0.78f,
-                    0.20f
+                    0.14f,
+                    0.56f,
+                    0.16f
                 )
             );
 
@@ -3246,14 +3193,8 @@ void drawPulley(
         );
     }
 
-
-    // --------------------------------------------------------
-    // 3. SMALL AXLE-BEARING BLOCKS
-    //
-    // These make the connection between hangers and axle look
-    // tighter instead of the wheel appearing to float.
-    // --------------------------------------------------------
-
+    // Dark bearing blocks:
+    // no bright coplanar contact with the rotating wheel.
     for (
         float x :
     { -hangerX, hangerX }
@@ -3267,8 +3208,8 @@ void drawPulley(
                 position +
                 glm::vec3(
                     x,
-                    0.0f,
-                    -0.08f
+                    0.08f,
+                    -0.18f
                 )
             );
 
@@ -3276,26 +3217,19 @@ void drawPulley(
             glm::scale(
                 bearing,
                 glm::vec3(
-                    0.30f,
-                    0.30f,
-                    0.30f
+                    0.20f,
+                    0.20f,
+                    0.18f
                 )
             );
 
         drawCube(
             bearing,
-            PULLEY_SPOKE
+            STATION_DARK
         );
     }
 
-
-    // --------------------------------------------------------
-    // 4. FIXED CENTER AXLE
-    //
-    // Cylinder is created with local Y-axis.
-    // Rotate it 90 degrees about X so the axle runs along Z.
-    // --------------------------------------------------------
-
+    // Fixed axle
     glm::mat4 axle(1.0f);
 
     axle =
@@ -3305,7 +3239,7 @@ void drawPulley(
             glm::vec3(
                 0.0f,
                 0.0f,
-                -0.04f
+                -0.06f
             )
         );
 
@@ -3324,24 +3258,18 @@ void drawPulley(
         glm::scale(
             axle,
             glm::vec3(
-                0.24f,
-                1.05f,
-                0.24f
+                0.16f,
+                0.76f,
+                0.16f
             )
         );
 
     drawCylinder(
         axle,
-        PULLEY_SPOKE
+        STATION_DARK
     );
 
-
-    // --------------------------------------------------------
-    // 5. ROTATING WHEEL PARENT
-    //
-    // Both wheel and spokes inherit this rotation.
-    // --------------------------------------------------------
-
+    // Rotating parent
     glm::mat4 wheelParent(1.0f);
 
     wheelParent =
@@ -3361,13 +3289,7 @@ void drawPulley(
             )
         );
 
-
-    // --------------------------------------------------------
-    // 6. LARGE DARK WHEEL
-    //
-    // Keep the same simple/clear appearance as before.
-    // --------------------------------------------------------
-
+    // Wheel
     glm::mat4 wheel =
         wheelParent;
 
@@ -3386,9 +3308,9 @@ void drawPulley(
         glm::scale(
             wheel,
             glm::vec3(
-                1.25f,
-                0.28f,
-                1.25f
+                1.18f,
+                0.22f,
+                1.18f
             )
         );
 
@@ -3397,38 +3319,44 @@ void drawPulley(
         PULLEY_COLOR
     );
 
-
-    // --------------------------------------------------------
-    // 7. CROSS SPOKES
-    //
-    // The spokes clearly show wheel direction/speed.
-    // --------------------------------------------------------
-
-    glm::mat4 horizontalSpoke =
+    // Put spokes clearly in front of the wheel surface.
+    glm::mat4 spokeParent =
         wheelParent;
 
-    horizontalSpoke =
-        glm::scale(
-            horizontalSpoke,
+    spokeParent =
+        glm::translate(
+            spokeParent,
             glm::vec3(
-                1.05f,
-                0.09f,
-                0.34f
+                0.0f,
+                0.0f,
+                0.15f
+            )
+        );
+
+    glm::mat4 spoke1 =
+        spokeParent;
+
+    spoke1 =
+        glm::scale(
+            spoke1,
+            glm::vec3(
+                0.98f,
+                0.08f,
+                0.08f
             )
         );
 
     drawCube(
-        horizontalSpoke,
+        spoke1,
         PULLEY_SPOKE
     );
 
+    glm::mat4 spoke2 =
+        spokeParent;
 
-    glm::mat4 verticalSpoke =
-        wheelParent;
-
-    verticalSpoke =
+    spoke2 =
         glm::rotate(
-            verticalSpoke,
+            spoke2,
             glm::radians(90.0f),
             glm::vec3(
                 0.0f,
@@ -3437,26 +3365,22 @@ void drawPulley(
             )
         );
 
-    verticalSpoke =
+    spoke2 =
         glm::scale(
-            verticalSpoke,
+            spoke2,
             glm::vec3(
-                1.05f,
-                0.09f,
-                0.34f
+                0.98f,
+                0.08f,
+                0.08f
             )
         );
 
     drawCube(
-        verticalSpoke,
+        spoke2,
         PULLEY_SPOKE
     );
 
-
-    // --------------------------------------------------------
-    // 8. CENTER CAP
-    // --------------------------------------------------------
-
+    // Center cap also sits clearly in front.
     glm::mat4 centerCap(1.0f);
 
     centerCap =
@@ -3466,7 +3390,7 @@ void drawPulley(
             glm::vec3(
                 0.0f,
                 0.0f,
-                0.18f
+                0.20f
             )
         );
 
@@ -3485,9 +3409,9 @@ void drawPulley(
         glm::scale(
             centerCap,
             glm::vec3(
-                0.23f,
-                0.15f,
-                0.23f
+                0.16f,
+                0.10f,
+                0.16f
             )
         );
 
@@ -3506,14 +3430,18 @@ void drawCableCar(
     float yawDegrees)
 {
     // ========================================================
-    // MAIN EVALUATION TRANSFORM
+    // SIMPLE CABLE CAR
     //
-    // cabinParent =
-    // TranslationAlongCable * LocalRotationAroundCabinY
+    // Basic geometric parts only:
+    // - red lower body
+    // - white upper body
+    // - dark roof
+    // - blue windows
+    // - one hanger
+    // - one cable grip
     //
-    // Every cabin part is a child of cabinParent.
-    // Therefore Q/E rotates the ENTIRE cabin around its
-    // OWN local Y-axis, not around world origin.
+    // Parent transformation:
+    // TranslationAlongCable * LocalYRotation
     // ========================================================
 
     glm::mat4 cabinParent(1.0f);
@@ -3535,7 +3463,10 @@ void drawCableCar(
             )
         );
 
-    // Main lower body.
+    // --------------------------------------------------------
+    // LOWER BODY
+    // --------------------------------------------------------
+
     glm::mat4 lowerBody =
         cabinParent;
 
@@ -3544,7 +3475,7 @@ void drawCableCar(
             lowerBody,
             glm::vec3(
                 0.0f,
-                -0.34f,
+                -0.25f,
                 0.0f
             )
         );
@@ -3553,9 +3484,9 @@ void drawCableCar(
         glm::scale(
             lowerBody,
             glm::vec3(
-                2.10f,
-                0.62f,
-                1.38f
+                1.82f,
+                0.44f,
+                1.08f
             )
         );
 
@@ -3564,7 +3495,10 @@ void drawCableCar(
         CABIN_RED
     );
 
-    // Upper white frame.
+    // --------------------------------------------------------
+    // UPPER BODY
+    // --------------------------------------------------------
+
     glm::mat4 upperBody =
         cabinParent;
 
@@ -3573,7 +3507,7 @@ void drawCableCar(
             upperBody,
             glm::vec3(
                 0.0f,
-                0.28f,
+                0.16f,
                 0.0f
             )
         );
@@ -3582,9 +3516,9 @@ void drawCableCar(
         glm::scale(
             upperBody,
             glm::vec3(
-                2.10f,
-                0.72f,
-                1.38f
+                1.82f,
+                0.50f,
+                1.08f
             )
         );
 
@@ -3593,7 +3527,10 @@ void drawCableCar(
         CABIN_WHITE
     );
 
-    // Roof.
+    // --------------------------------------------------------
+    // ROOF
+    // --------------------------------------------------------
+
     glm::mat4 roof =
         cabinParent;
 
@@ -3602,7 +3539,7 @@ void drawCableCar(
             roof,
             glm::vec3(
                 0.0f,
-                0.73f,
+                0.47f,
                 0.0f
             )
         );
@@ -3611,9 +3548,9 @@ void drawCableCar(
         glm::scale(
             roof,
             glm::vec3(
-                2.26f,
-                0.16f,
-                1.52f
+                1.98f,
+                0.12f,
+                1.18f
             )
         );
 
@@ -3622,15 +3559,16 @@ void drawCableCar(
         CABIN_DARK_RED
     );
 
-    // Front and rear windows.
+    // --------------------------------------------------------
+    // FRONT / BACK WINDOWS
+    // --------------------------------------------------------
+
     for (
         float z :
-    { -0.701f, 0.701f }
+    { -0.558f, 0.558f }
         )
     {
-        glm::mat4 window(1.0f);
-
-        window =
+        glm::mat4 window =
             cabinParent;
 
         window =
@@ -3638,7 +3576,7 @@ void drawCableCar(
                 window,
                 glm::vec3(
                     0.0f,
-                    0.30f,
+                    0.17f,
                     z
                 )
             );
@@ -3647,9 +3585,9 @@ void drawCableCar(
             glm::scale(
                 window,
                 glm::vec3(
-                    1.28f,
-                    0.43f,
-                    0.035f
+                    1.02f,
+                    0.30f,
+                    0.022f
                 )
             );
 
@@ -3659,94 +3597,50 @@ void drawCableCar(
         );
     }
 
-    // Left side window.
-    glm::mat4 leftWindow =
-        cabinParent;
+    // --------------------------------------------------------
+    // LEFT / RIGHT SIDE WINDOWS
+    // --------------------------------------------------------
 
-    leftWindow =
-        glm::translate(
-            leftWindow,
-            glm::vec3(
-                -1.066f,
-                0.30f,
-                0.0f
-            )
+    for (
+        float x :
+    { -0.930f, 0.930f }
+        )
+    {
+        glm::mat4 sideWindow =
+            cabinParent;
+
+        sideWindow =
+            glm::translate(
+                sideWindow,
+                glm::vec3(
+                    x,
+                    0.17f,
+                    0.0f
+                )
+            );
+
+        sideWindow =
+            glm::scale(
+                sideWindow,
+                glm::vec3(
+                    0.022f,
+                    0.30f,
+                    0.58f
+                )
+            );
+
+        drawCube(
+            sideWindow,
+            CABIN_WINDOW
         );
+    }
 
-    leftWindow =
-        glm::scale(
-            leftWindow,
-            glm::vec3(
-                0.035f,
-                0.43f,
-                0.77f
-            )
-        );
+    // --------------------------------------------------------
+    // HANGER
+    //
+    // Top reaches the cable exactly at +1.35.
+    // --------------------------------------------------------
 
-    drawCube(
-        leftWindow,
-        CABIN_WINDOW
-    );
-
-    // Right side door/window.
-    glm::mat4 rightWindow =
-        cabinParent;
-
-    rightWindow =
-        glm::translate(
-            rightWindow,
-            glm::vec3(
-                1.066f,
-                0.30f,
-                0.0f
-            )
-        );
-
-    rightWindow =
-        glm::scale(
-            rightWindow,
-            glm::vec3(
-                0.035f,
-                0.43f,
-                0.77f
-            )
-        );
-
-    drawCube(
-        rightWindow,
-        CABIN_WINDOW
-    );
-
-    // Asymmetric dark door bar makes Y rotation obvious.
-    glm::mat4 doorBar =
-        cabinParent;
-
-    doorBar =
-        glm::translate(
-            doorBar,
-            glm::vec3(
-                1.09f,
-                0.04f,
-                0.0f
-            )
-        );
-
-    doorBar =
-        glm::scale(
-            doorBar,
-            glm::vec3(
-                0.045f,
-                1.05f,
-                0.09f
-            )
-        );
-
-    drawCube(
-        doorBar,
-        CABIN_DARK
-    );
-
-    // Hanger from roof toward cable.
     glm::mat4 hanger =
         cabinParent;
 
@@ -3755,7 +3649,7 @@ void drawCableCar(
             hanger,
             glm::vec3(
                 0.0f,
-                1.175f,
+                0.91f,
                 0.0f
             )
         );
@@ -3764,18 +3658,21 @@ void drawCableCar(
         glm::scale(
             hanger,
             glm::vec3(
-                0.14f,
-                0.73f,
-                0.14f
+                0.11f,
+                0.82f,
+                0.11f
             )
         );
 
     drawCube(
         hanger,
-        CABIN_DARK
+        CABIN_HANGER_COLOR
     );
 
-    // Grip directly beneath cable.
+    // --------------------------------------------------------
+    // CABLE GRIP
+    // --------------------------------------------------------
+
     glm::mat4 grip =
         cabinParent;
 
@@ -3784,7 +3681,7 @@ void drawCableCar(
             grip,
             glm::vec3(
                 0.0f,
-                1.54f,
+                1.30f,
                 0.0f
             )
         );
@@ -3793,15 +3690,15 @@ void drawCableCar(
         glm::scale(
             grip,
             glm::vec3(
-                0.52f,
-                0.10f,
-                0.16f
+                0.42f,
+                0.04f,
+                0.14f
             )
         );
 
     drawCube(
         grip,
-        CABIN_DARK
+        CABIN_HANGER_COLOR
     );
 }
 
@@ -4102,44 +3999,42 @@ void drawScene()
     // --------------------------------------------------------
     // WATER
     // --------------------------------------------------------
-
     drawWater();
 
     // --------------------------------------------------------
-    // ISLAND / SHORE AREAS
+    // ISLANDS
     // --------------------------------------------------------
-
     drawIslands();
 
     // --------------------------------------------------------
     // LEFT MOUNTAIN GROUP
+    // Bigger and farther from the center channel.
     // --------------------------------------------------------
 
     drawMountain(
-        glm::vec3(-10.5f, 0.44f, -0.5f),
-        glm::vec3(6.3f, 7.2f, 6.2f),
+        glm::vec3(-14.2f, 0.44f, -0.7f),
+        glm::vec3(8.2f, 9.6f, 7.8f),
         18.0f,
         MOUNTAIN_GREEN
     );
 
     drawMountain(
-        glm::vec3(-12.2f, 0.44f, -3.4f),
-        glm::vec3(4.5f, 5.3f, 4.7f),
+        glm::vec3(-17.3f, 0.44f, -3.6f),
+        glm::vec3(5.8f, 6.9f, 5.6f),
         -15.0f,
         MOUNTAIN_GREEN_2
     );
 
     drawMountain(
-        glm::vec3(-11.5f, 0.44f, 3.5f),
-        glm::vec3(4.0f, 4.7f, 4.2f),
+        glm::vec3(-16.4f, 0.44f, 3.8f),
+        glm::vec3(5.2f, 6.1f, 5.0f),
         35.0f,
         MOUNTAIN_DARK
     );
 
-    // Small exposed rock near left coast.
     drawMountain(
-        glm::vec3(-7.0f, 0.44f, -3.55f),
-        glm::vec3(1.35f, 1.30f, 1.30f),
+        glm::vec3(-10.3f, 0.44f, -3.8f),
+        glm::vec3(1.55f, 1.45f, 1.45f),
         5.0f,
         ROCK_COLOR
     );
@@ -4149,30 +4044,29 @@ void drawScene()
     // --------------------------------------------------------
 
     drawMountain(
-        glm::vec3(10.5f, 0.44f, 0.0f),
-        glm::vec3(6.5f, 8.0f, 6.4f),
+        glm::vec3(14.2f, 0.44f, -0.5f),
+        glm::vec3(8.2f, 9.7f, 7.8f),
         -20.0f,
         MOUNTAIN_GREEN
     );
 
     drawMountain(
-        glm::vec3(12.0f, 0.44f, -3.5f),
-        glm::vec3(4.6f, 5.8f, 4.8f),
+        glm::vec3(17.3f, 0.44f, -3.6f),
+        glm::vec3(5.8f, 7.0f, 5.6f),
         12.0f,
         MOUNTAIN_GREEN_2
     );
 
     drawMountain(
-        glm::vec3(11.5f, 0.44f, 3.5f),
-        glm::vec3(4.0f, 5.0f, 4.0f),
+        glm::vec3(16.4f, 0.44f, 3.8f),
+        glm::vec3(5.2f, 6.2f, 5.0f),
         -30.0f,
         MOUNTAIN_DARK
     );
 
-    // Small exposed rock near right coast.
     drawMountain(
-        glm::vec3(7.0f, 0.44f, -3.55f),
-        glm::vec3(1.35f, 1.30f, 1.30f),
+        glm::vec3(10.3f, 0.44f, -3.8f),
+        glm::vec3(1.55f, 1.45f, 1.45f),
         -5.0f,
         ROCK_COLOR
     );
@@ -4180,13 +4074,11 @@ void drawScene()
     // --------------------------------------------------------
     // TREES
     // --------------------------------------------------------
-
     drawTrees();
 
     // --------------------------------------------------------
-    // STATIONS
+    // SIMPLE STATIONS
     // --------------------------------------------------------
-
     drawStation(
         stationAPosition,
         true
@@ -4198,32 +4090,26 @@ void drawScene()
     );
 
     // --------------------------------------------------------
-    // CABLE + PULLEYS
+    // CABLE + SAME-DIRECTION PULLEYS
     // --------------------------------------------------------
-
     drawCable();
 
-    // Both pulley wheels rotate in the SAME visible direction.
-    //
-    // A -> B:
-    //   pulleyAngle increases -> both wheels rotate the same way.
-    //
-    // B -> A:
-    //   pulleyAngle decreases -> both wheels reverse together.
+    const float renderedPulleyAngle =
+        getRenderedPulleyAngle();
+
     drawPulley(
         cableStart,
-        pulleyAngle
+        renderedPulleyAngle
     );
 
     drawPulley(
         cableEnd,
-        pulleyAngle
+        renderedPulleyAngle
     );
 
     // --------------------------------------------------------
     // CABLE CAR
     // --------------------------------------------------------
-
     drawCableCar(
         getCableCarPosition(),
         cabinYaw
@@ -4232,6 +4118,5 @@ void drawScene()
     // --------------------------------------------------------
     // SHIP
     // --------------------------------------------------------
-
     drawShip();
 }
